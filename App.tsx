@@ -7,7 +7,7 @@ import VillaForm from './components/VillaForm';
 import Settings from './components/Settings';
 import { Villa, VillaStatus, SupabaseConfig } from './types';
 import { Search, Plus, Filter, LogIn, Lock, Mail, Loader2 } from 'lucide-react';
-import { getSupabase } from './lib/supabase';
+import { villaService } from './services/villaService';
 
 const INITIAL_VILLAS: Villa[] = [
   {
@@ -21,18 +21,6 @@ const INITIAL_VILLAS: Villa[] = [
     price_yearly: 48000,
     agent_fee: 1200,
     status: VillaStatus.AVAILABLE,
-  },
-  {
-    id: '2',
-    name: 'Jungle Retreat Ubud',
-    image_url: 'https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?auto=format&fit=crop&q=80&w=1170',
-    google_drive_link: 'https://drive.google.com',
-    description: 'Serene jungle atmosphere with traditional Balinese architecture.',
-    location: 'Ubud, Bali',
-    price_monthly: 3200,
-    price_yearly: 35000,
-    agent_fee: 900,
-    status: VillaStatus.RENTED,
   }
 ];
 
@@ -55,22 +43,16 @@ const App: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('All');
 
-  // Fetch from Supabase if configured
-  const syncWithSupabase = async (config: SupabaseConfig | null) => {
-    if (!config) return;
-    const supabase = getSupabase(config);
-    if (!supabase) return;
-
+  // Sync data dari database
+  const syncData = async () => {
+    if (!supabaseConfig) return;
     setIsLoading(true);
     try {
-      const { data, error } = await supabase.from('villas').select('*').order('created_at', { ascending: false });
-      if (error) throw error;
-      if (data) {
-        setVillas(data);
-        localStorage.setItem('villas', JSON.stringify(data));
-      }
+      const data = await villaService.fetchAll(supabaseConfig);
+      setVillas(data);
+      localStorage.setItem('villas', JSON.stringify(data));
     } catch (e) {
-      console.error("Supabase sync error:", e);
+      console.error("Gagal sinkronisasi data:", e);
     } finally {
       setIsLoading(false);
     }
@@ -78,60 +60,64 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (supabaseConfig) {
-      syncWithSupabase(supabaseConfig);
+      syncData();
     }
   }, [supabaseConfig]);
-
-  useEffect(() => {
-    localStorage.setItem('villas', JSON.stringify(villas));
-  }, [villas]);
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     setIsAuthenticated(true);
   };
 
-  const saveToSupabase = async (villa: Villa | Partial<Villa>, method: 'INSERT' | 'UPDATE' | 'DELETE') => {
-    if (!supabaseConfig) return;
-    const supabase = getSupabase(supabaseConfig);
-    if (!supabase) return;
-
-    try {
-      if (method === 'INSERT') {
-        await supabase.from('villas').insert([villa]);
-      } else if (method === 'UPDATE') {
-        await supabase.from('villas').update(villa).eq('id', villa.id);
-      } else if (method === 'DELETE') {
-        await supabase.from('villas').delete().eq('id', villa.id);
-      }
-    } catch (e) {
-      console.error("Supabase write error:", e);
-    }
-  };
-
   const handleAddVilla = async (newVilla: Partial<Villa>) => {
-    const villaWithId = { ...newVilla, id: Date.now().toString() } as Villa;
-    setVillas([villaWithId, ...villas]);
-    setActiveTab('list');
-    await saveToSupabase(villaWithId, 'INSERT');
+    setIsLoading(true);
+    try {
+      if (supabaseConfig) {
+        const savedVilla = await villaService.insert(newVilla, supabaseConfig);
+        setVillas([savedVilla, ...villas]);
+      } else {
+        const localVilla = { ...newVilla, id: Date.now().toString() } as Villa;
+        setVillas([localVilla, ...villas]);
+      }
+      setActiveTab('list');
+    } catch (e) {
+      alert("Gagal menambah villa: " + (e as Error).message);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleUpdateVilla = async (updatedData: Partial<Villa>) => {
     if (!editingVilla) return;
-    const updatedVilla = { ...editingVilla, ...updatedData };
-    setVillas(villas.map(v => v.id === editingVilla.id ? updatedVilla : v));
-    setEditingVilla(null);
-    setActiveTab('list');
-    await saveToSupabase(updatedVilla, 'UPDATE');
+    setIsLoading(true);
+    try {
+      if (supabaseConfig) {
+        const updated = await villaService.update(editingVilla.id, updatedData, supabaseConfig);
+        setVillas(villas.map(v => v.id === editingVilla.id ? updated : v));
+      } else {
+        setVillas(villas.map(v => v.id === editingVilla.id ? { ...v, ...updatedData } : v));
+      }
+      setEditingVilla(null);
+      setActiveTab('list');
+    } catch (e) {
+      alert("Gagal update villa: " + (e as Error).message);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleDeleteVilla = async (id: string) => {
-    if (confirm('Are you sure you want to delete this villa?')) {
-      const deletedVilla = villas.find(v => v.id === id);
-      setVillas(villas.filter(v => v.id !== id));
-      if (deletedVilla) {
-        await saveToSupabase(deletedVilla, 'DELETE');
+    if (!confirm('Hapus villa ini?')) return;
+    setIsLoading(true);
+    try {
+      if (supabaseConfig) {
+        await villaService.delete(id, supabaseConfig);
       }
+      setVillas(villas.filter(v => v.id !== id));
+    } catch (e) {
+      alert("Gagal menghapus: " + (e as Error).message);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -158,37 +144,22 @@ const App: React.FC = () => {
             <h1 className="text-3xl font-bold text-gray-900">VillaPro Admin</h1>
             <p className="text-gray-500 mt-2">Sign in to manage your villa catalog</p>
           </div>
-
           <form onSubmit={handleLogin} className="space-y-6">
             <div className="space-y-2">
-              <label className="block text-sm font-semibold text-gray-700">Email Address</label>
+              <label className="block text-sm font-semibold text-gray-700">Email</label>
               <div className="relative">
                 <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
-                <input
-                  type="email"
-                  required
-                  defaultValue="agent@villapro.com"
-                  className="w-full pl-12 pr-4 py-4 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
-                />
+                <input type="email" required defaultValue="agent@villapro.com" className="w-full pl-12 pr-4 py-4 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none" />
               </div>
             </div>
-
             <div className="space-y-2">
               <label className="block text-sm font-semibold text-gray-700">Password</label>
               <div className="relative">
                 <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
-                <input
-                  type="password"
-                  required
-                  defaultValue="password"
-                  className="w-full pl-12 pr-4 py-4 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
-                />
+                <input type="password" required defaultValue="password" className="w-full pl-12 pr-4 py-4 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none" />
               </div>
             </div>
-
-            <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-2xl shadow-xl shadow-indigo-200 transition-all">
-              Sign In Now
-            </button>
+            <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-2xl shadow-xl shadow-indigo-200 transition-all">Sign In</button>
           </form>
         </div>
       </div>
@@ -198,48 +169,28 @@ const App: React.FC = () => {
   return (
     <Layout activeTab={activeTab} setActiveTab={setActiveTab} onLogout={() => setIsAuthenticated(false)}>
       {activeTab === 'dashboard' && <Dashboard villas={villas} />}
-      
       {activeTab === 'list' && (
         <div className="space-y-8 animate-fadeIn">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-3xl font-bold text-gray-900">Your Properties</h2>
+                <h2 className="text-3xl font-bold text-gray-900">Villa List</h2>
                 {isLoading && <Loader2 size={20} className="animate-spin text-indigo-500" />}
               </div>
-              <p className="text-gray-500 mt-1">
-                {supabaseConfig ? 'Connected to Supabase Cloud' : 'Using Local Storage (Unconnected)'}
-              </p>
+              <p className="text-gray-500 mt-1">{supabaseConfig ? 'Cloud Sync Enabled' : 'Local Storage Mode'}</p>
             </div>
-            <button
-              onClick={() => setActiveTab('add')}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 transition-all shadow-lg"
-            >
-              <Plus size={20} /> Add Villa
-            </button>
+            <button onClick={() => setActiveTab('add')} className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 shadow-lg"><Plus size={20} /> Add Villa</button>
           </div>
-
           <div className="flex flex-col md:flex-row gap-4">
             <div className="relative flex-1">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <input
-                type="text"
-                placeholder="Search..."
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                className="w-full pl-12 pr-4 py-4 rounded-xl border border-gray-100 shadow-sm outline-none bg-white transition-all"
-              />
+              <input type="text" placeholder="Search..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full pl-12 pr-4 py-4 rounded-xl border border-gray-100 shadow-sm outline-none bg-white" />
             </div>
-            <select
-              value={filterStatus}
-              onChange={e => setFilterStatus(e.target.value)}
-              className="px-6 py-4 rounded-xl border border-gray-100 shadow-sm outline-none bg-white font-medium"
-            >
+            <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="px-6 py-4 rounded-xl border border-gray-100 shadow-sm bg-white font-medium">
               <option value="All">All Status</option>
               {Object.values(VillaStatus).map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
-
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-12">
             {filteredVillas.map(villa => (
               <VillaCard key={villa.id} villa={villa} onEdit={(v) => { setEditingVilla(v); setActiveTab('edit'); }} onDelete={handleDeleteVilla} />
@@ -247,7 +198,6 @@ const App: React.FC = () => {
           </div>
         </div>
       )}
-
       {activeTab === 'add' && <VillaForm onSubmit={handleAddVilla} onCancel={() => setActiveTab('list')} />}
       {activeTab === 'edit' && editingVilla && <VillaForm initialData={editingVilla} onSubmit={handleUpdateVilla} onCancel={() => { setEditingVilla(null); setActiveTab('list'); }} />}
       {activeTab === 'database' && <Settings config={supabaseConfig} onSave={handleSaveSettings} />}
