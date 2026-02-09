@@ -3,8 +3,8 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { SupabaseConfig } from '../types';
 
 // Anda bisa memasukkan URL dan KEY di sini secara manual jika tidak ingin menggunakan menu Settings
-const MANUAL_URL = ''; 
-const MANUAL_KEY = '';
+const MANUAL_URL = 'https://ndjwubzasyqunmasapjr.supabase.co'; 
+const MANUAL_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5kand1Ynphc3lxdW5tYXNhcGpyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA2NTA1MjEsImV4cCI6MjA4NjIyNjUyMX0.OKHrnrPXPXotE-TaiLWSSkWVeusCq5YL1d7jq3w5ufw';
 
 let supabaseInstance: SupabaseClient | null = null;
 
