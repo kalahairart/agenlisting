@@ -6,7 +6,7 @@ import VillaCard from './components/VillaCard';
 import VillaForm from './components/VillaForm';
 import Settings from './components/Settings';
 import { Villa, VillaStatus, SupabaseConfig } from './types';
-import { Search, Plus, Lock, Mail, Loader2, AlertCircle } from 'lucide-react';
+import { Search, Plus, Lock, Mail, Loader2, AlertCircle, Database as DatabaseIcon, Home } from 'lucide-react';
 import { villaService } from './services/villaService';
 import { authService } from './services/authService';
 
@@ -26,31 +26,34 @@ const App: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('All');
 
-  // Cek sesi login saat aplikasi dimuat
   useEffect(() => {
     const checkSession = async () => {
-      if (supabaseConfig) {
+      try {
         const currentSession = await authService.getSession(supabaseConfig);
         setSession(currentSession);
+      } catch (e) {
+        console.error("Session check failed:", e);
       }
     };
     checkSession();
   }, [supabaseConfig]);
 
-  // Sync data dari database jika sudah login
   useEffect(() => {
-    if (session && supabaseConfig) {
+    if (session) {
       syncData();
     }
-  }, [session, supabaseConfig]);
+  }, [session]);
 
   const syncData = async () => {
     setIsLoading(true);
     try {
       const data = await villaService.fetchAll(supabaseConfig);
       setVillas(data);
-    } catch (e) {
-      console.error("Gagal sinkronisasi data:", e);
+    } catch (e: any) {
+      console.error("Sync error:", e);
+      if (e.message?.includes('villas" does not exist')) {
+        alert("Tabel 'villas' belum dibuat di Supabase. Jalankan SQL setup di dashboard Supabase.");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -66,10 +69,14 @@ const App: React.FC = () => {
     const password = formData.get('password') as string;
 
     try {
-      const { session: newSession } = await authService.signIn(email, password, supabaseConfig);
-      setSession(newSession);
+      const data = await authService.signIn(email, password, supabaseConfig);
+      if (data?.session) {
+        setSession(data.session);
+      } else {
+        throw new Error("Gagal mendapatkan sesi.");
+      }
     } catch (e: any) {
-      setAuthError(e.message || "Login gagal. Periksa email/password atau konfigurasi database.");
+      setAuthError(e.message || "Login gagal. Pastikan database terhubung dan user sudah dibuat di Supabase.");
     } finally {
       setIsLoading(false);
     }
@@ -79,6 +86,7 @@ const App: React.FC = () => {
     await authService.signOut(supabaseConfig);
     setSession(null);
     setVillas([]);
+    setActiveTab('dashboard');
   };
 
   const handleAddVilla = async (newVilla: Partial<Villa>) => {
@@ -88,7 +96,7 @@ const App: React.FC = () => {
       setVillas([savedVilla, ...villas]);
       setActiveTab('list');
     } catch (e: any) {
-      alert("Gagal menambah villa: " + e.message);
+      alert("Error: " + (e.message || "Gagal menyimpan data ke Supabase. Cek SQL Setup & RLS."));
     } finally {
       setIsLoading(false);
     }
@@ -103,20 +111,20 @@ const App: React.FC = () => {
       setEditingVilla(null);
       setActiveTab('list');
     } catch (e: any) {
-      alert("Gagal update villa: " + e.message);
+      alert("Update error: " + e.message);
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleDeleteVilla = async (id: string) => {
-    if (!confirm('Hapus villa ini?')) return;
+    if (!confirm('Hapus villa ini secara permanen dari database?')) return;
     setIsLoading(true);
     try {
       await villaService.delete(id, supabaseConfig);
       setVillas(villas.filter(v => v.id !== id));
     } catch (e: any) {
-      alert("Gagal menghapus: " + e.message);
+      alert("Delete error: " + e.message);
     } finally {
       setIsLoading(false);
     }
@@ -125,26 +133,29 @@ const App: React.FC = () => {
   const handleSaveSettings = (config: SupabaseConfig) => {
     setSupabaseConfig(config);
     localStorage.setItem('supabase_config', JSON.stringify(config));
-    window.location.reload(); // Reload untuk re-inisialisasi client
+    alert("Konfigurasi disimpan! Menghubungkan ulang...");
+    window.location.reload();
   };
 
   const filteredVillas = villas.filter(v => {
-    const matchesSearch = v.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                         v.location.toLowerCase().includes(searchQuery.toLowerCase());
+    const name = v.name || '';
+    const loc = v.location || '';
+    const matchesSearch = name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                         loc.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesFilter = filterStatus === 'All' || v.status === filterStatus;
     return matchesSearch && matchesFilter;
   });
 
   if (!session) {
     return (
-      <div className="min-h-screen bg-indigo-900 flex flex-col items-center justify-center p-4">
-        <div className="max-w-md w-full bg-white rounded-3xl shadow-2xl overflow-hidden p-8 md:p-12">
+      <div className="min-h-screen bg-indigo-950 flex flex-col items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white rounded-[2rem] shadow-2xl overflow-hidden p-8 md:p-12 animate-fadeIn">
           <div className="text-center mb-10">
-            <div className="bg-indigo-100 w-20 h-20 rounded-2xl flex items-center justify-center mx-auto mb-6">
-              <Lock className="text-indigo-600 w-10 h-10" />
+            <div className="bg-indigo-100 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-6">
+              <Lock className="text-indigo-600 w-8 h-8" />
             </div>
-            <h1 className="text-3xl font-bold text-gray-900">VillaPro Admin</h1>
-            <p className="text-gray-500 mt-2">Sign in with your Supabase account</p>
+            <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">VillaPro Admin</h1>
+            <p className="text-gray-500 mt-2">Masuk dengan akun Supabase Anda</p>
           </div>
 
           {authError && (
@@ -154,45 +165,44 @@ const App: React.FC = () => {
             </div>
           )}
 
-          <form onSubmit={handleLogin} className="space-y-6">
-            <div className="space-y-2">
-              <label className="block text-sm font-semibold text-gray-700">Email</label>
+          <form onSubmit={handleLogin} className="space-y-5">
+            <div className="space-y-1">
+              <label className="block text-sm font-bold text-gray-700 ml-1">Email</label>
               <div className="relative">
                 <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
-                <input name="email" type="email" required className="w-full pl-12 pr-4 py-4 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="agent@email.com" />
+                <input name="email" type="email" required className="w-full pl-12 pr-4 py-3.5 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none transition-all" placeholder="name@company.com" />
               </div>
             </div>
-            <div className="space-y-2">
-              <label className="block text-sm font-semibold text-gray-700">Password</label>
+            <div className="space-y-1">
+              <label className="block text-sm font-bold text-gray-700 ml-1">Password</label>
               <div className="relative">
                 <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
-                <input name="password" type="password" required className="w-full pl-12 pr-4 py-4 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="••••••••" />
+                <input name="password" type="password" required className="w-full pl-12 pr-4 py-3.5 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none transition-all" placeholder="••••••••" />
               </div>
             </div>
             <button 
               type="submit" 
               disabled={isLoading}
-              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-2xl shadow-xl shadow-indigo-200 transition-all flex items-center justify-center gap-2"
+              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-indigo-200 transition-all flex items-center justify-center gap-2 disabled:opacity-70"
             >
               {isLoading ? <Loader2 className="animate-spin" /> : 'Sign In'}
             </button>
           </form>
           
-          <div className="mt-8 pt-8 border-t border-gray-100">
-            <button 
+          <div className="mt-8 pt-6 border-t border-gray-100 flex flex-col items-center gap-4">
+             <button 
               onClick={() => setActiveTab('database')} 
-              className="w-full text-indigo-600 text-sm font-bold hover:underline"
+              className="flex items-center gap-2 text-indigo-600 text-sm font-bold hover:text-indigo-800 transition-colors"
             >
-              Database Settings (Setup First)
+              <DatabaseIcon size={16} /> Setup Database Manual
             </button>
           </div>
         </div>
 
-        {/* Database setup if not logged in */}
         {activeTab === 'database' && (
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-3xl p-8 max-w-lg w-full relative">
-              <button onClick={() => setActiveTab('dashboard')} className="absolute top-4 right-4 text-gray-400">✕</button>
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl p-8 max-w-lg w-full relative shadow-2xl">
+              <button onClick={() => setActiveTab('dashboard')} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600">✕</button>
               <Settings config={supabaseConfig} onSave={handleSaveSettings} />
             </div>
           </div>
@@ -209,26 +219,31 @@ const App: React.FC = () => {
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-3xl font-bold text-gray-900">Villa List</h2>
+                <h2 className="text-3xl font-bold text-gray-900 tracking-tight">Villa List</h2>
                 {isLoading && <Loader2 size={20} className="animate-spin text-indigo-500" />}
               </div>
-              <p className="text-gray-500 mt-1">Logged in as {session.user.email}</p>
+              <p className="text-gray-500 mt-1">Mengelola properti dari database Supabase.</p>
             </div>
-            <button onClick={() => setActiveTab('add')} className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 shadow-lg"><Plus size={20} /> Add Villa</button>
+            <button onClick={() => setActiveTab('add')} className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 shadow-lg transition-transform active:scale-95"><Plus size={20} /> Add Villa</button>
           </div>
+          
           <div className="flex flex-col md:flex-row gap-4">
             <div className="relative flex-1">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <input type="text" placeholder="Search by name or location..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full pl-12 pr-4 py-4 rounded-xl border border-gray-100 shadow-sm outline-none bg-white" />
+              <input type="text" placeholder="Search by name or location..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full pl-12 pr-4 py-4 rounded-xl border-none shadow-sm outline-none bg-white focus:ring-2 focus:ring-indigo-500" />
             </div>
-            <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="px-6 py-4 rounded-xl border border-gray-100 shadow-sm bg-white font-medium">
+            <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="px-6 py-4 rounded-xl border-none shadow-sm bg-white font-medium focus:ring-2 focus:ring-indigo-500">
               <option value="All">All Status</option>
               {Object.values(VillaStatus).map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
+
           {villas.length === 0 && !isLoading ? (
-            <div className="text-center py-20 bg-white rounded-3xl border border-dashed border-gray-200">
-              <p className="text-gray-400 font-medium">No villas found. Add your first villa!</p>
+            <div className="text-center py-24 bg-white rounded-3xl border border-dashed border-gray-200">
+              <div className="bg-gray-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Home className="text-gray-300 w-8 h-8" />
+              </div>
+              <p className="text-gray-400 font-medium">Belum ada villa di database. Tambahkan sekarang!</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-12">
