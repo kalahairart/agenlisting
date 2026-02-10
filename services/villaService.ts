@@ -2,10 +2,6 @@
 import { getSupabase } from '../lib/supabase';
 import { Villa, SupabaseConfig } from '../types';
 
-/**
- * Service untuk mengelola data Villa di Supabase.
- * Memisahkan logika database dari komponen UI.
- */
 export const villaService = {
   async fetchAll(config: SupabaseConfig | null): Promise<Villa[]> {
     const supabase = getSupabase(config);
@@ -16,7 +12,10 @@ export const villaService = {
       .select('*')
       .order('created_at', { ascending: false });
 
-    if (error) throw error;
+    if (error) {
+      console.error("Fetch Error:", error);
+      throw error;
+    }
     return data || [];
   },
 
@@ -24,13 +23,19 @@ export const villaService = {
     const supabase = getSupabase(config);
     if (!supabase) throw new Error("Supabase tidak terkonfigurasi");
 
+    // Hapus ID jika ada agar Supabase yang generate (UUID)
+    const { id, ...villaData } = villa;
+
     const { data, error } = await supabase
       .from('villas')
-      .insert([villa])
+      .insert([villaData])
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error("Insert Error:", error);
+      throw error;
+    }
     return data;
   },
 
