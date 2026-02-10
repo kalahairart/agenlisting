@@ -1,4 +1,3 @@
-
 import { getSupabase } from '../lib/supabase';
 import { SupabaseConfig } from '../types';
 
