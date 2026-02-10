@@ -1,68 +1,32 @@
 
 import { getSupabase } from '../lib/supabase';
-import { Villa, SupabaseConfig } from '../types';
+import { SupabaseConfig } from '../types';
 
-export const villaService = {
-  async fetchAll(config: SupabaseConfig | null): Promise<Villa[]> {
+export const authService = {
+  async signIn(email: string, password: string, config: SupabaseConfig | null) {
     const supabase = getSupabase(config);
-    if (!supabase) throw new Error("Supabase tidak terkonfigurasi");
+    if (!supabase) throw new Error("Database belum dikonfigurasi. Silakan isi URL dan Key di menu Database.");
 
-    const { data, error } = await supabase
-      .from('villas')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      console.error("Fetch Error:", error);
-      throw error;
-    }
-    return data || [];
-  },
-
-  async insert(villa: Partial<Villa>, config: SupabaseConfig | null): Promise<Villa> {
-    const supabase = getSupabase(config);
-    if (!supabase) throw new Error("Supabase tidak terkonfigurasi");
-
-    // Hapus ID jika ada agar Supabase yang generate (UUID)
-    const { id, ...villaData } = villa;
-
-    const { data, error } = await supabase
-      .from('villas')
-      .insert([villaData])
-      .select()
-      .single();
-
-    if (error) {
-      console.error("Insert Error:", error);
-      throw error;
-    }
-    return data;
-  },
-
-  async update(id: string, updates: Partial<Villa>, config: SupabaseConfig | null): Promise<Villa> {
-    const supabase = getSupabase(config);
-    if (!supabase) throw new Error("Supabase tidak terkonfigurasi");
-
-    const { data, error } = await supabase
-      .from('villas')
-      .update(updates)
-      .eq('id', id)
-      .select()
-      .single();
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
 
     if (error) throw error;
     return data;
   },
 
-  async delete(id: string, config: SupabaseConfig | null): Promise<void> {
+  async signOut(config: SupabaseConfig | null) {
     const supabase = getSupabase(config);
-    if (!supabase) throw new Error("Supabase tidak terkonfigurasi");
+    if (supabase) {
+      await supabase.auth.signOut();
+    }
+  },
 
-    const { error } = await supabase
-      .from('villas')
-      .delete()
-      .eq('id', id);
-
-    if (error) throw error;
+  async getSession(config: SupabaseConfig | null) {
+    const supabase = getSupabase(config);
+    if (!supabase) return null;
+    const { data } = await supabase.auth.getSession();
+    return data.session;
   }
 };
